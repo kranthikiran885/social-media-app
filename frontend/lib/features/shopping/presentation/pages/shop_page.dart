@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../../../core/theme/app_colors.dart';
 
 class ShopPage extends StatefulWidget {
@@ -11,6 +12,8 @@ class ShopPage extends StatefulWidget {
 class _ShopPageState extends State<ShopPage> with TickerProviderStateMixin {
   late TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  String _selectedCategory = 'all';
 
   @override
   void initState() {
@@ -26,9 +29,11 @@ class _ShopPageState extends State<ShopPage> with TickerProviderStateMixin {
         builder: (context, constraints) {
           final isTablet = constraints.maxWidth > 600;
           return CustomScrollView(
+            controller: _scrollController,
             slivers: [
               _buildAppBar(isTablet),
               SliverToBoxAdapter(child: _buildSearchBar(isTablet)),
+              SliverToBoxAdapter(child: _buildBannerCarousel(isTablet)),
               SliverToBoxAdapter(child: _buildTabBar(isTablet)),
               SliverFillRemaining(
                 child: TabBarView(
@@ -44,6 +49,50 @@ class _ShopPageState extends State<ShopPage> with TickerProviderStateMixin {
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildBannerCarousel(bool isTablet) {
+    return Padding(
+      padding: EdgeInsets.all(isTablet ? 24 : 16),
+      child: Container(
+        height: isTablet ? 180 : 140,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          gradient: AppColors.primaryGradient,
+        ),
+        child: Stack(
+          children: [
+            Positioned(
+              right: -30,
+              bottom: -30,
+              child: Icon(Icons.shopping_bag, size: 150, color: Colors.white.withOpacity(0.1)),
+            ),
+            Padding(
+              padding: EdgeInsets.all(isTablet ? 24 : 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('Summer Sale', style: TextStyle(color: Colors.white, fontSize: isTablet ? 28 : 24, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 8),
+                  Text('Up to 50% off on selected items', style: TextStyle(color: Colors.white70, fontSize: isTablet ? 15 : 13)),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: () {},
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: AppColors.primary,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    child: Text('Shop Now', style: TextStyle(fontWeight: FontWeight.w600, fontSize: isTablet ? 14 : 12)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
