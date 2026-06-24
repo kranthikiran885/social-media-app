@@ -1,0 +1,626 @@
+version: '3.9'
+
+services:
+  # ============================================
+  # DATABASES
+  # ============================================
+  
+  mongodb:
+    image: mongo:7.0-alpine
+    container_name: smart_social_mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-smartsocial123}
+      MONGO_INITDB_DATABASE: smart_social
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+      - ./backend/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    networks:
+      - smart_social_network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+
+  postgresql:
+    image: postgres:16-alpine
+    container_name: smart_social_postgresql
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-smartsocial123}
+      POSTGRES_DB: ${POSTGRES_DB:-smart_social}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgresql_data:/var/lib/postgresql/data
+      - ./backend/init-postgres.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - smart_social_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+
+  redis:
+    image: redis:7-alpine
+    container_name: smart_social_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-smartsocial123}
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - smart_social_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.9.0
+    container_name: smart_social_elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=true
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD:-smartsocial123}
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "${ELASTICSEARCH_PORT:-9200}:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - smart_social_network
+    healthcheck:
+      test: curl -s http://localhost:9200 >/dev/null || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+
+  # ============================================
+  # MESSAGE QUEUES & CACHING
+  # ============================================
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: smart_social_rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-smartsocial123}
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - smart_social_network
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+
+  memcached:
+    image: memcached:1.6-alpine
+    container_name: smart_social_memcached
+    restart: unless-stopped
+    ports:
+      - "${MEMCACHED_PORT:-11211}:11211"
+    networks:
+      - smart_social_network
+    healthcheck:
+      test: ["CMD", "memcached-tool", "localhost:11211", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+
+  # ============================================
+  # MONITORING & LOGGING
+  # ============================================
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: smart_social_prometheus
+    restart: unless-stopped
+    volumes:
+      - ./backend/infrastructure/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    networks:
+      - smart_social_network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: smart_social_grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-smartsocial123}
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./backend/infrastructure/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    networks:
+      - smart_social_network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+
+  # ============================================
+  # API GATEWAY & FRONTEND
+  # ============================================
+
+  api-gateway:
+    build:
+      context: ./backend/api-gateway
+      dockerfile: Dockerfile
+    container_name: smart_social_api_gateway
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=8000
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-smartsocial123}@redis:6379
+      - AUTH_SERVICE_URL=http://auth-service:3001
+      - CONTENT_SERVICE_URL=http://content-service:3003
+      - FEED_SERVICE_URL=http://feed-service:3004
+      - CHAT_SERVICE_URL=http://chat-service:3002
+      - SEARCH_SERVICE_URL=http://search-service:3006
+      - NOTIFICATION_SERVICE_URL=http://notification-service:3007
+      - ANALYTICS_SERVICE_URL=http://analytics-service:3008
+      - AI_SERVICE_URL=http://ai-moderation-service:3005
+      - PAYMENT_SERVICE_URL=http://payment-service:3009
+      - SECURITY_SERVICE_URL=http://security-service:3010
+      - ADMIN_SERVICE_URL=http://admin-service:3011
+      - ML_SERVICE_URL=http://ml-service:3012
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+      - auth-service
+      - content-service
+      - feed-service
+      - chat-service
+    networks:
+      - smart_social_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: smart_social_frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - api-gateway
+    networks:
+      - smart_social_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+
+  # ============================================
+  # MICROSERVICES
+  # ============================================
+
+  auth-service:
+    build:
+      context: ./backend/services/auth-service
+      dockerfile: Dockerfile
+    container_name: smart_social_auth
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - MONGODB_URI=mongodb://${MONGO_USERNAME:-admin}:${MONGO_PASSWORD:-smartsocial123}@mongodb:27017/smart_social_auth?authSource=admin
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-smartsocial123}@redis:6379
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-your-super-secret-refresh-key-change-in-production}
+      - JWT_EXPIRE=${JWT_EXPIRE:-24h}
+      - REFRESH_TOKEN_EXPIRE=${REFRESH_TOKEN_EXPIRE:-7d}
+      - EMAIL_SERVICE_URL=${EMAIL_SERVICE_URL:-http://email-service:3013}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    ports:
+      - "3001:3001"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - smart_social_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+
+  content-service:
+    build:
+      context: ./backend/services/content-service
+      dockerfile: Dockerfile
+    container_name: smart_social_content
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3003
+      - MONGODB_URI=mongodb://${MONGO_USERNAME:-admin}:${MONGO_PASSWORD:-smartsocial123}@mongodb:27017/smart_social_content?authSource=admin
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_S3_BUCKET=${AWS_S3_BUCKET:-smart-social-media}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-smartsocial123}@redis:6379
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    ports:
+      - "3003:3003"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - smart_social_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+
+  feed-service:
+    build:
+      context: ./backend/services/feed-service
+      dockerfile: Dockerfile
+    container_name: smart_social_feed
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3004
+      - MONGODB_URI=mongodb://${MONGO_USERNAME:-admin}:${MONGO_PASSWORD:-smartsocial123}@mongodb:27017/smart_social_feed?authSource=admin
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-smartsocial123}@redis:6379
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    ports:
+      - "3004:3004"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - smart_social_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+
+  chat-service:
+    build:
+      context: ./backend/services/chat-service
+      dockerfile: Dockerfile
+    container_name: smart_social_chat
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3002
+      - MONGODB_URI=mongodb://${MONGO_USERNAME:-admin}:${MONGO_PASSWORD:-smartsocial123}@mongodb:27017/smart_social_chat?authSource=admin
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-smartsocial123}@redis:6379
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER:-admin}:${RABBITMQ_PASSWORD:-smartsocial123}@rabbitmq:5672
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    ports:
+      - "3002:3002"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - smart_social_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+
+  search-service:
+    build:
+      context: ./backend/services/search-service
+      dockerfile: Dockerfile
+    container_name: smart_social_search
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3006
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-smartsocial123}@redis:6379
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    ports:
+      - "3006:3006"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - smart_social_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3006/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+
+  notification-service:
+    build:
+      context: ./backend/services/notification-service
+      dockerfile: Dockerfile
+    container_name: smart_social_notification
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3007
+      - MONGODB_URI=mongodb://${MONGO_USERNAME:-admin}:${MONGO_PASSWORD:-smartsocial123}@mongodb:27017/smart_social_notifications?authSource=admin
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER:-admin}:${RABBITMQ_PASSWORD:-smartsocial123}@rabbitmq:5672
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-smartsocial123}@redis:6379
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
+      - FIREBASE_PRIVATE_KEY=${FIREBASE_PRIVATE_KEY}
+      - FIREBASE_CLIENT_EMAIL=${FIREBASE_CLIENT_EMAIL}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    ports:
+      - "3007:3007"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - smart_social_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3007/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+
+  analytics-service:
+    build:
+      context: ./backend/services/analytics-service
+      dockerfile: Dockerfile
+    container_name: smart_social_analytics
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3008
+      - MONGODB_URI=mongodb://${MONGO_USERNAME:-admin}:${MONGO_PASSWORD:-smartsocial123}@mongodb:27017/smart_social_analytics?authSource=admin
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-smartsocial123}@redis:6379
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - PROMETHEUS_URL=http://prometheus:9090
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    ports:
+      - "3008:3008"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - smart_social_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3008/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+
+  ai-moderation-service:
+    build:
+      context: ./backend/services/ai-moderation-service
+      dockerfile: Dockerfile
+    container_name: smart_social_ai
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3005
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GOOGLE_VISION_KEY_PATH=/app/google-vision-key.json
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-smartsocial123}@redis:6379
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    ports:
+      - "3005:3005"
+    depends_on:
+      - redis
+    networks:
+      - smart_social_network
+    volumes:
+      - ${GOOGLE_VISION_KEY_PATH}:/app/google-vision-key.json:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+
+  payment-service:
+    build:
+      context: ./backend/services/payment-service
+      dockerfile: Dockerfile
+    container_name: smart_social_payment
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3009
+      - MONGODB_URI=mongodb://${MONGO_USERNAME:-admin}:${MONGO_PASSWORD:-smartsocial123}@mongodb:27017/smart_social_payments?authSource=admin
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-smartsocial123}@redis:6379
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    ports:
+      - "3009:3009"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - smart_social_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3009/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+
+volumes:
+  mongodb_data:
+    driver: local
+  mongodb_config:
+    driver: local
+  postgresql_data:
+    driver: local
+  redis_data:
+    driver: local
+  elasticsearch_data:
+    driver: local
+  rabbitmq_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  smart_social_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
