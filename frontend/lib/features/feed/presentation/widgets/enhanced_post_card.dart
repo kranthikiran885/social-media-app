@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:carousel_slider/carousel_slider.dart';
+import '../../../../../core/theme/app_colors.dart';
+import '../../../../../core/theme/text_styles.dart';
+import '../../../../../core/theme/app_shadows.dart';
 
 class EnhancedPostCard extends StatefulWidget {
   final dynamic post;
@@ -69,13 +72,14 @@ class _EnhancedPostCardState extends State<EnhancedPostCard>
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          top: BorderSide(color: Color(0xFFE5E5E5), width: 0.5),
-          bottom: BorderSide(color: Color(0xFFE5E5E5), width: 0.5),
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: const Border(
+          top: BorderSide(color: AppColors.border, width: 0.5),
+          bottom: BorderSide(color: AppColors.border, width: 0.5),
         ),
+        boxShadow: AppShadows.depthLevel1,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -106,11 +110,7 @@ class _EnhancedPostCardState extends State<EnhancedPostCard>
                   children: [
                     Text(
                       widget.post.username ?? 'user',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 15,
-                        color: Color(0xFF2D3436),
-                      ),
+                      style: AppTextStyles.titleMedium,
                     ),
                     const SizedBox(width: 4),
                     Container(
@@ -133,10 +133,7 @@ class _EnhancedPostCardState extends State<EnhancedPostCard>
                 if (widget.post.location != null)
                   Text(
                     widget.post.location!,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade600,
-                    ),
+                    style: AppTextStyles.bodySmall,
                   ),
               ],
             ),
@@ -153,28 +150,27 @@ class _EnhancedPostCardState extends State<EnhancedPostCard>
       height: 40,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: const LinearGradient(
-          colors: [Color(0xFF6C5CE7), Color(0xFFA29BFE)],
-        ),
+        gradient: AppColors.primaryGradient,
         border: Border.all(color: Colors.white, width: 2),
+        boxShadow: AppShadows.small,
       ),
       child: Container(
         margin: const EdgeInsets.all(2),
         decoration: const BoxDecoration(
           shape: BoxShape.circle,
-          color: Colors.grey,
+          color: AppColors.backgroundSecondary,
         ),
         child: ClipOval(
           child: CachedNetworkImage(
             imageUrl: widget.post.userAvatar ?? '',
             fit: BoxFit.cover,
             placeholder: (context, url) => Container(
-              color: Colors.grey.shade200,
-              child: const Icon(Icons.person, color: Colors.grey),
+              color: AppColors.backgroundTertiary,
+              child: const Icon(Icons.person, color: AppColors.textTertiary),
             ),
             errorWidget: (context, url, error) => Container(
-              color: Colors.grey.shade200,
-              child: const Icon(Icons.person, color: Colors.grey),
+              color: AppColors.backgroundTertiary,
+              child: const Icon(Icons.person, color: AppColors.textTertiary),
             ),
           ),
         ),
@@ -192,13 +188,13 @@ class _EnhancedPostCardState extends State<EnhancedPostCard>
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            color: Colors.grey.shade50,
+            color: AppColors.backgroundSecondary,
             borderRadius: BorderRadius.circular(20),
           ),
           child: const Icon(
             Icons.more_horiz,
             size: 20,
-            color: Color(0xFF2D3436),
+            color: AppColors.textPrimary,
           ),
         ),
       ),
@@ -354,7 +350,7 @@ class _EnhancedPostCardState extends State<EnhancedPostCard>
     Widget button = Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(20),
+        radius: 20,
         onTap: () {
           HapticFeedback.lightImpact();
           onTap?.call();
@@ -393,25 +389,17 @@ class _EnhancedPostCardState extends State<EnhancedPostCard>
               padding: const EdgeInsets.only(bottom: 4),
               child: Text(
                 '${widget.post.likes} likes',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                  color: Color(0xFF2D3436),
-                ),
+                style: AppTextStyles.titleSmall,
               ),
             ),
           if ((widget.post.content ?? '').isNotEmpty)
             RichText(
               text: TextSpan(
-                style: const TextStyle(
-                  color: Color(0xFF2D3436),
-                  fontSize: 14,
-                  height: 1.4,
-                ),
+                style: AppTextStyles.bodyMedium,
                 children: [
                   TextSpan(
                     text: widget.post.username ?? 'user',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+                    style: AppTextStyles.titleMedium,
                   ),
                   const TextSpan(text: ' '),
                   TextSpan(text: widget.post.content ?? ''),

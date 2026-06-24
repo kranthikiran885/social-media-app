@@ -1,24 +1,42 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../../../core/theme/app_colors.dart';
 
 class StoriesViewerPage extends StatefulWidget {
-  const StoriesViewerPage({super.key});
+  final List<Map<String, dynamic>>? stories;
+  final int initialIndex;
+
+  const StoriesViewerPage({
+    super.key,
+    this.stories,
+    this.initialIndex = 0,
+  });
 
   @override
   State<StoriesViewerPage> createState() => _StoriesViewerPageState();
 }
 
-class _StoriesViewerPageState extends State<StoriesViewerPage> with TickerProviderStateMixin {
+class _StoriesViewerPageState extends State<StoriesViewerPage>
+    with SingleTickerProviderStateMixin {
   late PageController _pageController;
   late AnimationController _progressController;
   int _currentStoryIndex = 0;
-  int _currentUserIndex = 0;
   final TextEditingController _messageController = TextEditingController();
+
+  late List<Map<String, dynamic>> _stories;
 
   @override
   void initState() {
     super.initState();
-    _pageController = PageController();
+    _stories = widget.stories ??
+        List.generate(5, (i) => {
+              'image': 'https://picsum.photos/400/800?random=${i + 1}',
+              'userName': 'User ${i + 1}',
+              'userAvatar': 'https://picsum.photos/100/100?random=${i + 1}',
+              'text': 'Story ${i + 1}',
+            });
+    _currentStoryIndex = widget.initialIndex;
+    _pageController = PageController(initialPage: _currentStoryIndex);
     _progressController = AnimationController(
       duration: const Duration(seconds: 5),
       vsync: this,
@@ -33,12 +51,22 @@ class _StoriesViewerPageState extends State<StoriesViewerPage> with TickerProvid
   }
 
   void _nextStory() {
-    if (_currentStoryIndex < 4) {
-      setState(() => _currentStoryIndex++);
-      _progressController.reset();
-      _startStoryProgress();
+    if (_currentStoryIndex < _stories.length - 1) {
+      _pageController.nextPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
     } else {
       Navigator.pop(context);
+    }
+  }
+
+  void _previousStory() {
+    if (_currentStoryIndex > 0) {
+      _pageController.previousPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
     }
   }
 
@@ -48,16 +76,27 @@ class _StoriesViewerPageState extends State<StoriesViewerPage> with TickerProvid
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          _buildStoryContent(),
+          PageView.builder(
+            controller: _pageController,
+            onPageChanged: (index) {
+              setState(() {
+                _currentStoryIndex = index;
+              });
+              _progressController.forward(from: 0.0);
+            },
+            itemCount: _stories.length,
+            itemBuilder: (context, index) => _buildStoryPage(_stories[index]),
+          ),
           _buildProgressBars(),
           _buildTopBar(),
           _buildBottomControls(),
+          _buildNavigationGestures(),
         ],
       ),
     );
   }
 
-  Widget _buildStoryContent() {
+  Widget _buildStoryPage(Map<String, dynamic> story) {
     return GestureDetector(
       onTapDown: (details) {
         final screenWidth = MediaQuery.of(context).size.width;
@@ -67,49 +106,63 @@ class _StoriesViewerPageState extends State<StoriesViewerPage> with TickerProvid
           _nextStory();
         }
       },
-      child: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.black.withOpacity(0.3),
-              Colors.transparent,
-              Colors.black.withOpacity(0.7),
-            ],
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          CachedNetworkImage(
+            imageUrl: story['image'] ?? 'https://picsum.photos/400/800?random=1',
+            fit: BoxFit.cover,
           ),
-        ),
-        child: Center(
-          child: Container(
-            width: 200,
-            height: 300,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.photo_camera,
-                  size: 60,
-                  color: Colors.white,
+          if (story['text'] != null)
+            Positioned(
+              bottom: 100,
+              left: 16,
+              right: 16,
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.4),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  'Story ${_currentStoryIndex + 1}',
-                  style: TextStyle(
+                child: Text(
+                  story['text'],
+                  style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 18,
+                    fontSize: 16,
                     fontWeight: FontWeight.w600,
                   ),
+                  textAlign: TextAlign.center,
                 ),
-              ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNavigationGestures() {
+    return Positioned(
+      top: 0,
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: Row(
+        children: [
+          Expanded(
+            flex: 1,
+            child: GestureDetector(
+              onTap: _previousStory,
+              behavior: HitTestBehavior.translucent,
             ),
           ),
-        ),
+          Expanded(
+            flex: 1,
+            child: GestureDetector(
+              onTap: _nextStory,
+              behavior: HitTestBehavior.translucent,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -119,7 +172,7 @@ class _StoriesViewerPageState extends State<StoriesViewerPage> with TickerProvid
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Row(
-          children: List.generate(5, (index) {
+          children: List.generate(_stories.length, (index) {
             return Expanded(
               child: Container(
                 height: 3,
@@ -158,6 +211,7 @@ class _StoriesViewerPageState extends State<StoriesViewerPage> with TickerProvid
   }
 
   Widget _buildTopBar() {
+    final currentStory = _stories[_currentStoryIndex];
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -165,7 +219,9 @@ class _StoriesViewerPageState extends State<StoriesViewerPage> with TickerProvid
           children: [
             CircleAvatar(
               radius: 20,
-              backgroundImage: NetworkImage('https://picsum.photos/100/100?random=user'),
+              backgroundImage: CachedNetworkImageProvider(
+                currentStory['userAvatar'] ?? 'https://picsum.photos/100/100?random=1',
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -173,8 +229,8 @@ class _StoriesViewerPageState extends State<StoriesViewerPage> with TickerProvid
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'username',
-                    style: TextStyle(
+                    currentStory['userName'] ?? 'User',
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -191,11 +247,11 @@ class _StoriesViewerPageState extends State<StoriesViewerPage> with TickerProvid
               ),
             ),
             IconButton(
-              icon: Icon(Icons.more_vert, color: Colors.white),
+              icon: const Icon(Icons.more_vert, color: Colors.white),
               onPressed: () => _showStoryOptions(),
             ),
             IconButton(
-              icon: Icon(Icons.close, color: Colors.white),
+              icon: const Icon(Icons.close, color: Colors.white),
               onPressed: () => Navigator.pop(context),
             ),
           ],
@@ -212,70 +268,112 @@ class _StoriesViewerPageState extends State<StoriesViewerPage> with TickerProvid
       child: SafeArea(
         child: Container(
           padding: const EdgeInsets.all(16),
-          child: Row(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Expanded(
-                child: Container(
-                  height: 44,
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.white.withOpacity(0.5)),
-                    borderRadius: BorderRadius.circular(22),
-                  ),
-                  child: TextField(
-                    controller: _messageController,
-                    style: TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: 'Send message',
-                      hintStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.message, color: Colors.white, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: _messageController,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          hintText: 'Reply...',
+                          hintStyle:
+                              TextStyle(color: Colors.white.withOpacity(0.5)),
+                          border: InputBorder.none,
+                        ),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () {
+                        if (_messageController.text.isNotEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Reply sent!')),
+                          );
+                          _messageController.clear();
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.send,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  GestureDetector(
+                    onTap: () {},
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.favorite_outline,
+                        color: Colors.white,
+                        size: 20,
+                      ),
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  shape: BoxShape.circle,
-                ),
-                child: IconButton(
-                  icon: Icon(Icons.favorite_outline, color: Colors.white),
-                  onPressed: () {},
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  shape: BoxShape.circle,
-                ),
-                child: IconButton(
-                  icon: Icon(Icons.send_outlined, color: Colors.white),
-                  onPressed: () {
-                    if (_messageController.text.isNotEmpty) {
-                      _messageController.clear();
-                    }
-                  },
-                ),
+                  GestureDetector(
+                    onTap: () {},
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.share,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () {},
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.more_vert,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
         ),
       ),
     );
-  }
-
-  void _previousStory() {
-    if (_currentStoryIndex > 0) {
-      setState(() => _currentStoryIndex--);
-      _progressController.reset();
-      _startStoryProgress();
-    }
   }
 
   void _showStoryOptions() {
